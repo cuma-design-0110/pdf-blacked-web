@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF 리댁션 툴 · PDF Redaction Tool</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --blue-dark:  #1a3a6b;
+    --blue-mid:   #2356a8;
+    --blue:       #2f6fd4;
+    --blue-light: #5b9cf6;
+    --blue-pale:  #dbeafe;
+    --blue-bg:    #eff6ff;
+    --white:      #ffffff;
+    --gray-100:   #f1f5f9;
+    --gray-200:   #e2e8f0;
+    --gray-400:   #94a3b8;
+    --gray-600:   #475569;
+    --gray-800:   #1e293b;
+    --accent:     #1d4ed8;
+    --shadow:     0 2px 12px rgba(35,86,168,0.13);
+    --sans-kr:    'Noto Sans KR', 'Inter', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--blue-bg);
+    color: var(--gray-800);
+    font-family: var(--sans-kr);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 24px;
+    height: 64px;
+    background: var(--blue-dark);
+    box-shadow: 0 2px 8px rgba(26,58,107,0.25);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  .logo {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+    margin-right: 8px;
+  }
+  .logo-kr {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: -0.01em;
+  }
+  .logo-en {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--blue-light);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .divider { width: 1px; height: 32px; background: rgba(255,255,255,0.15); margin: 0 4px; }
+
+  .btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1.5px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.08);
+    color: var(--white);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    min-width: 80px;
+  }
+  .btn-kr {
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'Noto Sans KR', sans-serif;
+    line-height: 1;
+  }
+  .btn-en {
+    font-size: 10px;
+    font-weight: 400;
+    font-family: 'Inter', sans-serif;
+    color: var(--blue-light);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .btn:hover:not(:disabled) {
+    background: rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.4);
+  }
+  .btn.primary {
+    background: var(--blue);
+    border-color: var(--blue-light);
+  }
+  .btn.primary:hover:not(:disabled) {
+    background: #3b82f6;
+    border-color: #93c5fd;
+  }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ── Page nav ── */
+  .page-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .page-nav button {
+    background: rgba(255,255,255,0.1);
+    border: 1.5px solid rgba(255,255,255,0.2);
+    color: var(--white);
+    width: 34px; height: 34px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .page-nav button:hover:not(:disabled) { background: rgba(255,255,255,0.22); }
+  .page-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .page-info {
+    min-width: 72px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--white);
+  }
+
+  /* ── Toolbar sub-row ── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px;
+    background: var(--white);
+    border-bottom: 1.5px solid var(--gray-200);
+    flex-shrink: 0;
+    box-shadow: var(--shadow);
+  }
+
+  .status-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-left: auto;
+  }
+  .status-kr {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--gray-800);
+    line-height: 1.2;
+  }
+  .status-en {
+    font-size: 11px;
+    color: var(--gray-400);
+    font-family: 'Inter', sans-serif;
+    letter-spacing: 0.03em;
+  }
+  .status-wrap.active .status-kr { color: var(--blue); }
+  .status-wrap.active .status-en { color: var(--blue-light); }
+
+  /* Toolbar btns (light) */
+  .tbtn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1.5px solid var(--gray-200);
+    background: var(--white);
+    color: var(--gray-800);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .tbtn-kr { font-size: 14px; font-weight: 500; font-family: 'Noto Sans KR', sans-serif; line-height: 1; }
+  .tbtn-en { font-size: 10px; color: var(--gray-400); font-family: 'Inter', sans-serif; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1; }
+  .tbtn:hover:not(:disabled) { border-color: var(--blue-light); background: var(--blue-pale); color: var(--blue-dark); }
+  .tbtn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .tbtn.danger:hover:not(:disabled) { border-color: #fca5a5; background: #fef2f2; color: #dc2626; }
+
+  .tbtn .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--blue);
+    color: var(--white);
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    padding: 0 5px;
+    margin-left: 5px;
+    font-family: 'Inter', sans-serif;
+    vertical-align: middle;
+  }
+
+  /* ── Drop zone ── */
+  #drop-zone {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    border: 2.5px dashed var(--gray-200);
+    margin: 32px;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    background: var(--white);
+  }
+  #drop-zone:hover, #drop-zone.dragover {
+    border-color: var(--blue);
+    background: var(--blue-pale);
+  }
+  .drop-icon {
+    width: 72px; height: 72px;
+    background: var(--blue-pale);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
+  }
+  .drop-title-kr {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--gray-800);
+    line-height: 1.3;
+  }
+  .drop-title-en {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--blue);
+    font-family: 'Inter', sans-serif;
+    letter-spacing: 0.02em;
+    margin-top: 2px;
+  }
+  .drop-sub {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .drop-sub p {
+    font-size: 15px;
+    color: var(--gray-600);
+    line-height: 1.5;
+  }
+  .drop-sub .en {
+    font-size: 12px;
+    color: var(--gray-400);
+    font-family: 'Inter', sans-serif;
+  }
+  .shortcut-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .shortcut {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--gray-400);
+    font-family: 'Inter', sans-serif;
+  }
+  .shortcut kbd {
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: 'Inter', monospace;
+    color: var(--gray-600);
+  }
+
+  /* ── Viewer ── */
+  #viewer-wrap {
+    flex: 1;
+    overflow: auto;
+    display: none;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 28px;
+    background: var(--gray-100);
+  }
+
+  #canvas-container {
+    position: relative;
+    display: inline-block;
+    box-shadow: 0 4px 32px rgba(35,86,168,0.18), 0 1px 4px rgba(0,0,0,0.08);
+    border-radius: 2px;
+  }
+
+  #pdf-canvas {
+    display: block;
+    cursor: crosshair;
+    border-radius: 2px;
+  }
+
+  #redact-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    border-radius: 2px;
+  }
+
+  #sel-rect {
+    position: absolute;
+    border: 2px solid var(--blue);
+    background: rgba(47,111,212,0.12);
+    pointer-events: none;
+    display: none;
+    border-radius: 2px;
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--blue-dark);
+    border-left: 4px solid var(--blue-light);
+    border-radius: 8px;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--white);
+    opacity: 0;
+    transition: all 0.25s;
+    pointer-events: none;
+    z-index: 100;
+    white-space: nowrap;
+    box-shadow: 0 4px 24px rgba(26,58,107,0.25);
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  #file-input { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-kr">PDF 리댁션 도구</span>
+    <span class="logo-en">PDF Redaction Tool</span>
+  </div>
+  <div class="divider"></div>
+  <button class="btn primary" onclick="document.getElementById('file-input').click()">
+    <span class="btn-kr">📂 PDF 열기</span>
+    <span class="btn-en">Open PDF</span>
+  </button>
+  <input type="file" id="file-input" accept=".pdf">
+
+  <div class="page-nav" id="page-nav" style="display:none">
+    <button id="btn-prev" onclick="changePage(-1)">‹</button>
+    <span class="page-info" id="page-info">1 / 1</span>
+    <button id="btn-next" onclick="changePage(1)">›</button>
+  </div>
+</header>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <button class="tbtn" id="btn-undo" disabled onclick="undoLast()">
+    <span class="tbtn-kr">↩ 되돌리기 <span id="undo-count" class="badge" style="display:none">0</span></span>
+    <span class="tbtn-en">Undo (Ctrl+Z)</span>
+  </button>
+  <button class="tbtn danger" id="btn-clear" disabled onclick="clearAll()">
+    <span class="tbtn-kr">🗑 현재 페이지 초기화</span>
+    <span class="tbtn-en">Clear Page</span>
+  </button>
+  <button class="tbtn primary" id="btn-save" disabled onclick="saveRedacted()"
+    style="background:var(--blue-pale);border-color:var(--blue);color:var(--blue-dark);">
+    <span class="tbtn-kr">💾 저장 (리댁션 적용)</span>
+    <span class="tbtn-en">Save Redacted PDF (Ctrl+S)</span>
+  </button>
+
+  <div class="status-wrap" id="status-wrap">
+    <span class="status-kr" id="status-kr">파일을 열어주세요</span>
+    <span class="status-en" id="status-en">Open a PDF file to get started</span>
+  </div>
+</div>
+
+<!-- Drop zone -->
+<div id="drop-zone" onclick="document.getElementById('file-input').click()">
+  <div class="drop-icon">📄</div>
+  <div>
+    <div class="drop-title-kr">PDF 파일을 드롭하거나 클릭하여 열기</div>
+    <div class="drop-title-en">Drop a PDF here or click to browse</div>
+  </div>
+  <div class="drop-sub">
+    <p>마우스로 드래그하면 해당 영역이 검은 블록으로 가려집니다</p>
+    <p class="en">Drag to select an area — it will be covered with a black redaction block</p>
+  </div>
+  <div class="shortcut-row">
+    <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · Undo</div>
+    <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>S</kbd> 저장 · Save</div>
+    <div class="shortcut"><kbd>←</kbd><kbd>→</kbd> 페이지 이동 · Navigate</div>
+  </div>
+</div>
+
+<!-- Viewer -->
+<div id="viewer-wrap">
+  <div id="canvas-container">
+    <canvas id="pdf-canvas"></canvas>
+    <canvas id="redact-canvas"></canvas>
+    <div id="sel-rect"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let pdfDoc = null;
+let currentPage = 1;
+let totalPages = 0;
+let scale = 1.5;
+let pdfBytes = null;
+let pdfFileName = 'document';
+
+// redactions[pageNum] = [{x, y, w, h} in PDF coords]
+let redactions = {};
+
+// drag state
+let isDragging = false;
+let startX = 0, startY = 0;
+
+const canvas = document.getElementById('pdf-canvas');
+const ctx = canvas.getContext('2d');
+const rCanvas = document.getElementById('redact-canvas');
+const rCtx = rCanvas.getContext('2d');
+const selRect = document.getElementById('sel-rect');
+const container = document.getElementById('canvas-container');
+
+// ── File input ──
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) loadPDF(file);
+});
+
+// Drop
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file?.type === 'application/pdf') loadPDF(file);
+});
+
+async function loadPDF(file) {
+  pdfBytes = await file.arrayBuffer();
+  pdfFileName = file.name;
+  const data = new Uint8Array(pdfBytes);
+  pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  totalPages = pdfDoc.numPages;
+  currentPage = 1;
+  redactions = {};
+
+  document.getElementById('drop-zone').style.display = 'none';
+  document.getElementById('viewer-wrap').style.display = 'flex';
+  document.getElementById('page-nav').style.display = totalPages > 1 ? 'flex' : 'none';
+  document.getElementById('btn-save').disabled = false;
+  document.getElementById('btn-clear').disabled = false;
+
+  setStatus(`"${file.name}" — ${totalPages}페이지`, false);
+  renderPage();
+}
+
+async function renderPage() {
+  const page = await pdfDoc.getPage(currentPage);
+  const viewport = page.getViewport({ scale });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  rCanvas.width = viewport.width;
+  rCanvas.height = viewport.height;
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  drawRedactions();
+
+  document.getElementById('page-info').textContent = `${currentPage} / ${totalPages}`;
+  document.getElementById('btn-prev').disabled = currentPage <= 1;
+  document.getElementById('btn-next').disabled = currentPage >= totalPages;
+}
+
+function drawRedactions() {
+  rCtx.clearRect(0, 0, rCanvas.width, rCanvas.height);
+  const rects = redactions[currentPage] || [];
+  rCtx.fillStyle = '#000000';
+  rects.forEach(r => {
+    // r is in PDF coords; convert to canvas coords
+    const cx = r.x * scale;
+    const cy = r.y * scale;
+    const cw = r.w * scale;
+    const ch = r.h * scale;
+    rCtx.fillRect(cx, cy, cw, ch);
+  });
+  updateUndoBtn();
+}
+
+// ── Mouse events on canvas ──
+canvas.addEventListener('mousedown', e => {
+  if (!pdfDoc) return;
+  isDragging = true;
+  const rect = canvas.getBoundingClientRect();
+  startX = e.clientX - rect.left;
+  startY = e.clientY - rect.top;
+  selRect.style.display = 'block';
+  selRect.style.left = startX + 'px';
+  selRect.style.top = startY + 'px';
+  selRect.style.width = '0';
+  selRect.style.height = '0';
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const x = Math.min(cx, startX);
+  const y = Math.min(cy, startY);
+  const w = Math.abs(cx - startX);
+  const h = Math.abs(cy - startY);
+  selRect.style.left = x + 'px';
+  selRect.style.top = y + 'px';
+  selRect.style.width = w + 'px';
+  selRect.style.height = h + 'px';
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (!isDragging) return;
+  isDragging = false;
+  selRect.style.display = 'none';
+
+  const rect = canvas.getBoundingClientRect();
+  const endX = e.clientX - rect.left;
+  const endY = e.clientY - rect.top;
+
+  const x = Math.min(startX, endX);
+  const y = Math.min(startY, endY);
+  const w = Math.abs(endX - startX);
+  const h = Math.abs(endY - startY);
+
+  if (w < 4 || h < 4) return; // too small
+
+  // Convert canvas px → PDF coords
+  const pdfX = x / scale;
+  const pdfY = y / scale;
+  const pdfW = w / scale;
+  const pdfH = h / scale;
+
+  if (!redactions[currentPage]) redactions[currentPage] = [];
+  redactions[currentPage].push({ x: pdfX, y: pdfY, w: pdfW, h: pdfH });
+  drawRedactions();
+  setStatus(`${currentPage}페이지에 리댁션 ${redactions[currentPage].length}개`, true);
+});
+
+canvas.addEventListener('mouseleave', () => {
+  if (isDragging) {
+    isDragging = false;
+    selRect.style.display = 'none';
+  }
+});
+
+// ── Undo / Clear ──
+function undoLast() {
+  const rects = redactions[currentPage];
+  if (rects && rects.length > 0) {
+    rects.pop();
+    drawRedactions();
+    setStatus(`되돌렸습니다`, false);
+  }
+}
+
+function clearAll() {
+  redactions[currentPage] = [];
+  drawRedactions();
+  setStatus('현재 페이지 리댁션 초기화', false);
+}
+
+function updateUndoBtn() {
+  const count = (redactions[currentPage] || []).length;
+  const btn = document.getElementById('btn-undo');
+  const badge = document.getElementById('undo-count');
+  btn.disabled = count === 0;
+  if (count > 0) {
+    badge.style.display = 'inline-flex';
+    badge.textContent = count;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ── Page nav ──
+function changePage(delta) {
+  const next = currentPage + delta;
+  if (next < 1 || next > totalPages) return;
+  currentPage = next;
+  renderPage();
+}
+
+// ── Save ──
+async function saveRedacted() {
+  if (!pdfBytes) return;
+  setStatus('저장 중...', true);
+
+  try {
+    // Load jsPDF first if not already loaded
+    if (!window.jspdf) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    }
+
+    const JSPDF = window.jspdf.jsPDF;
+    if (!JSPDF) throw new Error('jsPDF 라이브러리를 불러오지 못했습니다');
+
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
+    let pdf = null;
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      setStatus(`저장 중... (${pageNum}/${totalPages}페이지)`, true);
+      const page = await pdfDoc.getPage(pageNum);
+      const vp = page.getViewport({ scale: 2.0 });
+      offCanvas.width = vp.width;
+      offCanvas.height = vp.height;
+
+      // Render PDF page
+      offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+      await page.render({ canvasContext: offCtx, viewport: vp }).promise;
+
+      // Draw redaction blocks (black)
+      const rects = redactions[pageNum] || [];
+      offCtx.fillStyle = '#000000';
+      rects.forEach(r => {
+        offCtx.fillRect(r.x * 2.0, r.y * 2.0, r.w * 2.0, r.h * 2.0);
+      });
+
+      const imgData = offCanvas.toDataURL('image/jpeg', 0.95);
+      // Convert px → mm (72 DPI PDF coords, scale 2.0 → 144 DPI)
+      const wMm = (vp.width / 2) * 25.4 / 72;
+      const hMm = (vp.height / 2) * 25.4 / 72;
+
+      if (pageNum === 1) {
+        pdf = new JSPDF({
+          unit: 'mm',
+          format: [wMm, hMm],
+          orientation: wMm > hMm ? 'l' : 'p'
+        });
+      } else {
+        pdf.addPage([wMm, hMm], wMm > hMm ? 'l' : 'p');
+      }
+      pdf.addImage(imgData, 'JPEG', 0, 0, wMm, hMm);
+    }
+
+    const baseName = (pdfFileName || 'document').replace(/\.pdf$/i, '');
+    pdf.save(`${baseName}_blacked.pdf`);
+    setStatus('저장 완료! redacted.pdf', false);
+    showToast('✓  redacted.pdf 저장되었습니다');
+  } catch (err) {
+    console.error(err);
+    setStatus('저장 오류: ' + err.message, false);
+    showToast('저장 중 오류가 발생했습니다');
+  }
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = res;
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+// ── UI helpers ──
+const statusMap = {
+  '파일을 열어주세요':          'Open a PDF file to get started',
+  '저장 중...':                'Saving...',
+  '저장 완료! redacted.pdf':   'Saved as redacted.pdf',
+  '되돌렸습니다':               'Undo applied',
+  '현재 페이지 리댁션 초기화':  'Current page redactions cleared',
+};
+
+function setStatus(msgKr, active) {
+  const wrap = document.getElementById('status-wrap');
+  const kr   = document.getElementById('status-kr');
+  const en   = document.getElementById('status-en');
+  kr.textContent = msgKr;
+  let msgEn = statusMap[msgKr];
+  if (!msgEn) {
+    if (msgKr.includes('페이지에 리댁션')) {
+      const m = msgKr.match(/(\d+)페이지에 리댁션 (\d+)개/);
+      if (m) msgEn = `${m[2]} redaction(s) on page ${m[1]}`;
+    } else if (msgKr.startsWith('저장 중...')) {
+      msgEn = msgKr.replace('저장 중... (', 'Saving... (').replace('페이지)', ' pages)');
+    } else if (msgKr.includes('저장 오류')) {
+      msgEn = 'Save error';
+    } else if (msgKr.match(/^".+".*페이지$/)) {
+      const m = msgKr.match(/^"(.+)" — (\d+)페이지$/);
+      if (m) msgEn = `"${m[1]}" — ${m[2]} page(s)`;
+    }
+  }
+  en.textContent = msgEn || '';
+  wrap.className = 'status-wrap' + (active ? ' active' : '');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); }
+  if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveRedacted(); }
+  if (e.key === 'ArrowLeft') changePage(-1);
+  if (e.key === 'ArrowRight') changePage(1);
+});
+</script>
+</body>
+</html>
